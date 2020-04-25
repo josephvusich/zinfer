@@ -255,21 +255,26 @@ func (p *parser) parseDataset(pool *Pool) (*Dataset, error) {
 			return nil, fmt.Errorf("unparseable input: %s", l)
 		}
 
-		if name := string(m[1]); i == 0 {
+		setName := string(m[1])
+		if strings.ContainsRune(setName, '@') {
+			continue
+		}
+
+		if i == 0 {
 			if pool == nil {
-				return nil, nextPool(name)
+				return nil, nextPool(setName)
 			}
 
-			if name != set.Name {
-				if name != pool.Name && !isParent(name, pool.Name) {
-					return nil, nextPool(name)
+			if setName != set.Name {
+				if setName != pool.Name && !isParent(setName, pool.Name) {
+					return nil, nextPool(setName)
 				}
-				set.Name = name
+				set.Name = setName
 			} else {
 				panic("blank set name")
 			}
 		} else {
-			if name != set.Name {
+			if setName != set.Name {
 				p.lines = p.lines[i:]
 				return set, nil
 			}

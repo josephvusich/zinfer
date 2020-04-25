@@ -20,6 +20,8 @@ foo          fizz     buzz   default
 foo          mounted  no     -
 foo/bar      buzz     fizz   -
 
+fizz@buzz    nope     nah    -
+
 bar          zzup     zzip   local
 bar/foo      mounted  yes    -
 bar/foo/bar  zzup     zzip   inherited from bar`)
