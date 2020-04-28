@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -46,6 +47,11 @@ func (p *Property) statusOnly() bool {
 	return ok
 }
 
+func (p *Property) nonEncryptionInherit() bool {
+	_, ok := encryptionInheritedProperties[p.Name]
+	return !ok && !p.statusOnly()
+}
+
 func (p *Property) flag(o string) []string {
 	if p.statusOnly() || p.Source.Location == PropertyDefault || p.Source.Location == PropertyInherited {
 		return nil
@@ -56,6 +62,10 @@ func (p *Property) flag(o string) []string {
 type Dataset struct {
 	Name       string
 	Properties map[string]*Property
+}
+
+func isRootDataset(name string) bool {
+	return !strings.ContainsRune(name, '/')
 }
 
 type sortedProperties []*Property
@@ -116,9 +126,29 @@ func (p *Pool) addDataset(d *Dataset) error {
 	return nil
 }
 
+// returns ancestors in ascending order: [0] is immediate parent
+func (p *Pool) getAncestors(d *Dataset) (ancestors []*Dataset, err error) {
+	if isRootDataset(d.Name) {
+		return nil, nil
+	}
+
+	for name := path.Dir(d.Name); ; name = path.Dir(name) {
+		parent, ok := p.Datasets.Index[name]
+		if !ok {
+			return nil, fmt.Errorf("unable to locate ancestor %s of %s", name, d.Name)
+		}
+		ancestors = append(ancestors, parent)
+		if isRootDataset(name) {
+			break
+		}
+	}
+
+	return ancestors, nil
+}
+
 func (d *Dataset) CreateCommand() (cmdline []string) {
 	var o string
-	if !strings.ContainsRune(d.Name, '/') {
+	if isRootDataset(d.Name) {
 		cmdline = []string{"zpool"}
 		o = "O"
 	} else {
@@ -187,7 +217,7 @@ func ImportedPools() ([]*Pool, error) {
 	return pools, nil
 }
 
-func fixEncryptionHierarchy(pools []*Pool) error {
+func fixInheritance(pools []*Pool) error {
 	for _, pool := range pools {
 		for _, set := range pool.Datasets.Ordered {
 			if er, ok := set.Properties[encryptionRoot]; ok && er.Value() != "" && er.Value() != set.Name {
@@ -201,29 +231,49 @@ func fixEncryptionHierarchy(pools []*Pool) error {
 				}
 
 				// Non-parent encryptionroot is possible via cloning, but we don't set up inheritance here as command inference gets confusing
-				if !isParent(set.Name, rootSet.Name) {
-					continue
+				if isParent(set.Name, rootSet.Name) {
+					for propName := range encryptionInheritedProperties {
+						rootProp, ok := rootSet.Properties[propName]
+						if !ok {
+							return fmt.Errorf("encrypted dataset %s is missing property: %s", rootSet.Name, propName)
+						}
+
+						selfProp, ok := set.Properties[propName]
+						if !ok {
+							return fmt.Errorf("encrypted dataset %s is missing property: %s", set.Name, propName)
+						}
+
+						if _, ok := encryptionLocalProperties[propName]; ok && rootProp.Value() != selfProp.Value() {
+							continue
+						}
+
+						selfProp.Source = PropertySource{
+							Location:  PropertyInherited,
+							Parent:    rootSet.Name,
+							Inherited: rootProp,
+						}
+					}
+				}
+			}
+
+			if !isRootDataset(set.Name) {
+				ancestors, err := pool.getAncestors(set)
+				if err != nil {
+					return err
 				}
 
-				for propName := range encryptionInheritedProperties {
-					rootProp, ok := rootSet.Properties[propName]
-					if !ok {
-						return fmt.Errorf("encrypted dataset %s is missing property: %s", rootSet.Name, propName)
-					}
-
-					selfProp, ok := set.Properties[propName]
-					if !ok {
-						return fmt.Errorf("encrypted dataset %s is missing property: %s", set.Name, propName)
-					}
-
-					if _, ok := encryptionLocalProperties[propName]; ok && rootProp.Value() != selfProp.Value() {
-						continue
-					}
-
-					selfProp.Source = PropertySource{
-						Location:  PropertyInherited,
-						Parent:    rootSet.Name,
-						Inherited: rootProp,
+				for _, prop := range set.Properties {
+					if prop.Source.Location == PropertyReadonly && prop.Source.Location != PropertyInherited && prop.nonEncryptionInherit() {
+						for _, a := range ancestors {
+							if parentProp, ok := a.Properties[prop.Name]; ok && prop.Source.Location != PropertyInherited {
+								if parentProp.Value() == prop.Value() {
+									prop.Source.Location = PropertyInherited
+									prop.Source.Parent = a.Name
+									prop.Source.Inherited = parentProp
+								}
+								break
+							}
+						}
 					}
 				}
 			}
@@ -249,7 +299,7 @@ func parseGetAll(b []byte) ([]*Pool, error) {
 			pools = append(pools, pool)
 		case inputEOF:
 			pools = append(pools, pool)
-			if err := fixEncryptionHierarchy(pools); err != nil {
+			if err := fixInheritance(pools); err != nil {
 				return nil, err
 			}
 			return pools, err
@@ -276,7 +326,7 @@ func (e inputEOF) Error() string {
 }
 
 func newPool(name nextPool) (*Pool, error) {
-	if strings.ContainsRune(string(name), '/') {
+	if !isRootDataset(string(name)) {
 		return nil, fmt.Errorf("first dataset in pool is not root: %s", name)
 	}
 

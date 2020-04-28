@@ -27,7 +27,7 @@ var statusProperties = map[string]struct{}{
 
 var encryptionRoot = "encryptionroot"
 
-// Properties inherited from encryptionroot
+// Properties that inherit from encryptionroot rather than parent
 // Note that encryptionLocalProperties overlaps with this set
 var encryptionInheritedProperties = map[string]struct{}{
 	"encryptionroot": {},

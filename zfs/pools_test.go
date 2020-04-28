@@ -23,6 +23,7 @@ foo/bar      buzz            fizz        -
 fizz@buzz    nope            nah         -
 
 bar          zzup            zzip        local
+bar          xxup            xxip        -
 bar/foo      mounted         yes         -
 bar/foo      encryptionroot  bar/foo     -
 bar/foo      encryption      foobar      -
@@ -36,7 +37,8 @@ bar/foo/bar  keylocation     none        default
 bar/foo/bar  keyformat       passphrase  -
 bar/foo/bar  pbkdf2iters     342K        -
 bar/foo/bar  keystatus       available   -
-bar/foo/bar  zzup            zzip        inherited from bar`)
+bar/foo/bar  zzup            zzip        inherited from bar
+bar/foo/bar  xxup            xxip        -`)
 
 	expected := map[string][]expectSet{
 		"foo": {
@@ -81,6 +83,13 @@ bar/foo/bar  zzup            zzip        inherited from bar`)
 						localValue: "zzip",
 						Source: PropertySource{
 							Location: PropertyLocal,
+						},
+					},
+					{
+						Name:       "xxup",
+						localValue: "xxip",
+						Source: PropertySource{
+							Location: PropertyReadonly,
 						},
 					},
 				},
@@ -145,6 +154,14 @@ bar/foo/bar  zzup            zzip        inherited from bar`)
 					{
 						Name:       "zzup",
 						localValue: "zzip",
+						Source: PropertySource{
+							Location: PropertyInherited,
+							Parent:   "bar",
+						},
+					},
+					{
+						Name:       "xxup",
+						localValue: "xxip",
 						Source: PropertySource{
 							Location: PropertyInherited,
 							Parent:   "bar",
@@ -230,7 +247,7 @@ bar/foo/bar  zzup            zzip        inherited from bar`)
 	expectCmd := []string{
 		`zpool create foo`,
 		`zfs create -o buzz=fizz foo/bar`,
-		`zpool create -O zzup=zzip bar`,
+		`zpool create -O xxup=xxip -O zzup=zzip bar`,
 		`zfs create -o encryption=foobar -o keyformat=passphrase -o keylocation=prompt -o pbkdf2iters=342K bar/foo`,
 		`zfs create -o encryption=fizzybar bar/foo/bar`,
 	}
