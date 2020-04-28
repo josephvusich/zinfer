@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -24,30 +25,32 @@ type PropertySource struct {
 }
 
 type Property struct {
-	Name   string
-	value  string
-	Source PropertySource
+	Name       string
+	localValue string
+	Source     PropertySource
 }
 
 func (p *Property) Value() string {
 	if p.Source.Location == PropertyInherited {
 		return p.Source.Inherited.Value()
 	}
-	return p.value
+	return p.localValue
 }
 
 func isParent(self, parent string) bool {
 	return strings.HasPrefix(self, fmt.Sprintf("%s/", parent))
 }
 
-func (p *Property) flag(o string) (flag string, value string) {
-	if _, ok := statusProperties[p.Name]; ok {
-		return "", ""
+func (p *Property) statusOnly() bool {
+	_, ok := statusProperties[p.Name]
+	return ok
+}
+
+func (p *Property) flag(o string) []string {
+	if p.statusOnly() || p.Source.Location == PropertyDefault || p.Source.Location == PropertyInherited {
+		return nil
 	}
-	if p.Source.Location == PropertyDefault || p.Source.Location == PropertyInherited {
-		return "", ""
-	}
-	return fmt.Sprintf("-%s", o), fmt.Sprintf("%s=%s", p.Name, p.value)
+	return []string{fmt.Sprintf("-%s", o), fmt.Sprintf("%s=%s", p.Name, p.localValue)}
 }
 
 type Dataset struct {
@@ -55,12 +58,43 @@ type Dataset struct {
 	Properties map[string]*Property
 }
 
+type sortedProperties []*Property
+
+func (s sortedProperties) Len() int {
+	return len(s)
+}
+
+func (s sortedProperties) Less(i, j int) bool {
+	return s[i].Name < s[j].Name
+}
+
+func (s sortedProperties) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
 func (d *Dataset) flags(o string) (flags []string) {
-	for _, p := range d.Properties {
-		if f, v := p.flag(o); f != "" {
-			flags = append(flags, f, v)
-		}
+	var encryptedChild bool
+	if er, ok := d.Properties[encryptionRoot]; ok && er.Value() != d.Name {
+		encryptedChild = true
 	}
+
+	var sorted sortedProperties
+	for _, p := range d.Properties {
+		sorted = append(sorted, p)
+	}
+	sort.Sort(sorted)
+
+	for _, p := range sorted {
+		if encryptedChild {
+			if _, ok := encryptionInheritedProperties[p.Name]; ok {
+				if _, ok := encryptionLocalProperties[p.Name]; !ok {
+					continue
+				}
+			}
+		}
+		flags = append(flags, p.flag(o)...)
+	}
+
 	return flags
 }
 
@@ -132,7 +166,7 @@ func parseSource(name string, value string, raw string, parent string, pool *Poo
 		return nil, fmt.Errorf("parent %s not found", parent)
 	}
 
-	panic(fmt.Sprintf("property source for %s is invalid: %s", name, raw))
+	return nil, fmt.Errorf("property source for %s is invalid: %s", name, raw)
 }
 
 func zfsGetAllRaw() ([]byte, error) {
@@ -146,10 +180,57 @@ func ImportedPools() ([]*Pool, error) {
 	}
 
 	pools, err := parseGetAll(b)
-	if _, ok := err.(inputEOF); ok {
-		return pools, nil
+	if _, ok := err.(inputEOF); !ok {
+		return nil, fmt.Errorf("error parsing pool properties: %w", err)
 	}
-	return nil, fmt.Errorf("error parsing pool properties: %w", err)
+
+	return pools, nil
+}
+
+func fixEncryptionHierarchy(pools []*Pool) error {
+	for _, pool := range pools {
+		for _, set := range pool.Datasets.Ordered {
+			if er, ok := set.Properties[encryptionRoot]; ok && er.Value() != "" && er.Value() != set.Name {
+				rootSet, ok := pool.Datasets.Index[er.Value()]
+				if !ok {
+					return fmt.Errorf("%s encryptionroot %s not found", set.Name, er.Value())
+				}
+
+				if rootRoot, ok := rootSet.Properties[encryptionRoot]; !ok || rootRoot.Value() != er.Value() {
+					return fmt.Errorf("encryptionroot %s of child %s is not self-rooted: %s != %s", rootSet.Name, set.Name, rootRoot.Value(), rootSet.Name)
+				}
+
+				// Non-parent encryptionroot is possible via cloning, but we don't set up inheritance here as command inference gets confusing
+				if !isParent(set.Name, rootSet.Name) {
+					continue
+				}
+
+				for propName := range encryptionInheritedProperties {
+					rootProp, ok := rootSet.Properties[propName]
+					if !ok {
+						return fmt.Errorf("encrypted dataset %s is missing property: %s", rootSet.Name, propName)
+					}
+
+					selfProp, ok := set.Properties[propName]
+					if !ok {
+						return fmt.Errorf("encrypted dataset %s is missing property: %s", set.Name, propName)
+					}
+
+					if _, ok := encryptionLocalProperties[propName]; ok && rootProp.Value() != selfProp.Value() {
+						continue
+					}
+
+					selfProp.Source = PropertySource{
+						Location:  PropertyInherited,
+						Parent:    rootSet.Name,
+						Inherited: rootProp,
+					}
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func parseGetAll(b []byte) ([]*Pool, error) {
@@ -168,6 +249,9 @@ func parseGetAll(b []byte) ([]*Pool, error) {
 			pools = append(pools, pool)
 		case inputEOF:
 			pools = append(pools, pool)
+			if err := fixEncryptionHierarchy(pools); err != nil {
+				return nil, err
+			}
 			return pools, err
 		default:
 			return nil, err
@@ -288,9 +372,9 @@ func (p *parser) parseDataset(pool *Pool) (*Dataset, error) {
 		}
 
 		set.Properties[string(m[2])] = &Property{
-			Name:   name,
-			value:  value,
-			Source: *src,
+			Name:       name,
+			localValue: value,
+			Source:     *src,
 		}
 	}
 

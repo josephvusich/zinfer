@@ -24,3 +24,21 @@ var statusProperties = map[string]struct{}{
 	"encryptionroot":       {},
 	"keystatus":            {},
 }
+
+var encryptionRoot = "encryptionroot"
+
+// Properties inherited from encryptionroot
+// Note that encryptionLocalProperties overlaps with this set
+var encryptionInheritedProperties = map[string]struct{}{
+	"encryptionroot": {},
+	"encryption":     {},
+	"keylocation":    {}, // This one appears to be "none, local" on child datasets, but we treat it like the others
+	"keyformat":      {},
+	"pbkdf2iters":    {},
+	"keystatus":      {},
+}
+
+// Properties that may differ from encryptionroot
+var encryptionLocalProperties = map[string]struct{}{
+	"encryption": {},
+}

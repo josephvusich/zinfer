@@ -16,15 +16,27 @@ func TestParseGetAll(t *testing.T) {
 	assert := require.New(t)
 
 	input := []byte(`NAME  PROPERTY  VALUE  SOURCE
-foo          fizz     buzz   default
-foo          mounted  no     -
-foo/bar      buzz     fizz   -
+foo          fizz            buzz        default
+foo          mounted         no          -
+foo/bar      buzz            fizz        -
 
-fizz@buzz    nope     nah    -
+fizz@buzz    nope            nah         -
 
-bar          zzup     zzip   local
-bar/foo      mounted  yes    -
-bar/foo/bar  zzup     zzip   inherited from bar`)
+bar          zzup            zzip        local
+bar/foo      mounted         yes         -
+bar/foo      encryptionroot  bar/foo     -
+bar/foo      encryption      foobar      -
+bar/foo      keystatus       available   -
+bar/foo      keylocation     prompt      local
+bar/foo      keyformat       passphrase  -
+bar/foo      pbkdf2iters     342K        -
+bar/foo/bar  encryptionroot  bar/foo     -
+bar/foo/bar  encryption      fizzybar    -
+bar/foo/bar  keylocation     none        default
+bar/foo/bar  keyformat       passphrase  -
+bar/foo/bar  pbkdf2iters     342K        -
+bar/foo/bar  keystatus       available   -
+bar/foo/bar  zzup            zzip        inherited from bar`)
 
 	expected := map[string][]expectSet{
 		"foo": {
@@ -32,15 +44,15 @@ bar/foo/bar  zzup     zzip   inherited from bar`)
 				SetName: "foo",
 				Properties: []Property{
 					{
-						Name:  "fizz",
-						value: "buzz",
+						Name:       "fizz",
+						localValue: "buzz",
 						Source: PropertySource{
 							Location: PropertyDefault,
 						},
 					},
 					{
-						Name:  "mounted",
-						value: "no",
+						Name:       "mounted",
+						localValue: "no",
 						Source: PropertySource{
 							Location: PropertyReadonly,
 						},
@@ -51,8 +63,8 @@ bar/foo/bar  zzup     zzip   inherited from bar`)
 				SetName: "foo/bar",
 				Properties: []Property{
 					{
-						Name:  "buzz",
-						value: "fizz",
+						Name:       "buzz",
+						localValue: "fizz",
 						Source: PropertySource{
 							Location: PropertyReadonly,
 						},
@@ -65,8 +77,8 @@ bar/foo/bar  zzup     zzip   inherited from bar`)
 				SetName: "bar",
 				Properties: []Property{
 					{
-						Name:  "zzup",
-						value: "zzip",
+						Name:       "zzup",
+						localValue: "zzip",
 						Source: PropertySource{
 							Location: PropertyLocal,
 						},
@@ -77,8 +89,50 @@ bar/foo/bar  zzup     zzip   inherited from bar`)
 				SetName: "bar/foo",
 				Properties: []Property{
 					{
-						Name:  "mounted",
-						value: "yes",
+						Name:       "mounted",
+						localValue: "yes",
+						Source: PropertySource{
+							Location: PropertyReadonly,
+						},
+					},
+					{
+						Name:       "encryptionroot",
+						localValue: "bar/foo",
+						Source: PropertySource{
+							Location: PropertyReadonly,
+						},
+					},
+					{
+						Name:       "encryption",
+						localValue: "foobar",
+						Source: PropertySource{
+							Location: PropertyReadonly,
+						},
+					},
+					{
+						Name:       "keystatus",
+						localValue: "available",
+						Source: PropertySource{
+							Location: PropertyReadonly,
+						},
+					},
+					{
+						Name:       "keylocation",
+						localValue: "prompt",
+						Source: PropertySource{
+							Location: PropertyLocal,
+						},
+					},
+					{
+						Name:       "keyformat",
+						localValue: "passphrase",
+						Source: PropertySource{
+							Location: PropertyReadonly,
+						},
+					},
+					{
+						Name:       "pbkdf2iters",
+						localValue: "342K",
 						Source: PropertySource{
 							Location: PropertyReadonly,
 						},
@@ -89,11 +143,58 @@ bar/foo/bar  zzup     zzip   inherited from bar`)
 				SetName: "bar/foo/bar",
 				Properties: []Property{
 					{
-						Name:  "zzup",
-						value: "zzip",
+						Name:       "zzup",
+						localValue: "zzip",
 						Source: PropertySource{
 							Location: PropertyInherited,
 							Parent:   "bar",
+						},
+					},
+					{
+						Name:       "encryptionroot",
+						localValue: "bar/foo",
+						Source: PropertySource{
+							Location: PropertyInherited,
+							Parent:   "bar/foo",
+						},
+					},
+					{
+						Name:       "encryption",
+						localValue: "fizzybar",
+						Source: PropertySource{
+							Location: PropertyReadonly,
+						},
+					},
+					{
+						Name:       "keystatus",
+						localValue: "available",
+						Source: PropertySource{
+							Location: PropertyInherited,
+							Parent:   "bar/foo",
+						},
+					},
+					{
+						Name:       "keylocation",
+						localValue: "prompt",
+						Source: PropertySource{
+							Location: PropertyInherited,
+							Parent:   "bar/foo",
+						},
+					},
+					{
+						Name:       "keyformat",
+						localValue: "passphrase",
+						Source: PropertySource{
+							Location: PropertyInherited,
+							Parent:   "bar/foo",
+						},
+					},
+					{
+						Name:       "pbkdf2iters",
+						localValue: "342K",
+						Source: PropertySource{
+							Location: PropertyInherited,
+							Parent:   "bar/foo",
 						},
 					},
 				},
@@ -115,13 +216,12 @@ bar/foo/bar  zzup     zzip   inherited from bar`)
 			set := p.Datasets.Ordered[i]
 
 			assert.Equal(expect.SetName, set.Name)
-			assert.Len(set.Properties, len(expect.Properties))
+			assert.Len(set.Properties, len(expect.Properties), "%s properties", set.Name)
 
 			for _, p := range expect.Properties {
 				assert.Contains(set.Properties, p.Name)
-				assert.Equal(p.value, set.Properties[p.Name].value)
-				assert.Equal(p.value, set.Properties[p.Name].Value())
-				assert.Equal(p.Source.Location, set.Properties[p.Name].Source.Location)
+				assert.Equal(p.localValue, set.Properties[p.Name].Value(), "property %s on %s", p.Name, set.Name)
+				assert.Equal(p.Source.Location, set.Properties[p.Name].Source.Location, "property %s source location on %s", p.Name, set.Name)
 				assert.Equal(p.Source.Parent, set.Properties[p.Name].Source.Parent)
 			}
 		}
@@ -131,8 +231,8 @@ bar/foo/bar  zzup     zzip   inherited from bar`)
 		`zpool create foo`,
 		`zfs create -o buzz=fizz foo/bar`,
 		`zpool create -O zzup=zzip bar`,
-		`zfs create bar/foo`,
-		`zfs create bar/foo/bar`,
+		`zfs create -o encryption=foobar -o keyformat=passphrase -o keylocation=prompt -o pbkdf2iters=342K bar/foo`,
+		`zfs create -o encryption=fizzybar bar/foo/bar`,
 	}
 
 	var n int
@@ -181,6 +281,12 @@ foo/bar  buzz  fuzz   inherited from foo`,
 foo      fizz  buzz   inherited from bar`,
 		"first dataset in pool is not root: foo/bar": `NAME  PROPERTY  VALUE  SOURCE
 foo/bar  fizz  buzz   -`,
+		"foo/bar encryptionroot bar not found": `NAME  PROPERTY  VALUE  SOURCE
+foo      fizz            buzz   -
+foo/bar  encryptionroot  bar    -`,
+		"encryptionroot foo/bar of child foo is not self-rooted: bar != foo/bar": `NAME  PROPERTY  VALUE  SOURCE
+foo      encryptionroot  foo/bar  -
+foo/bar  encryptionroot  bar      -`,
 	}
 
 	for out, in := range cases {
