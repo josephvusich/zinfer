@@ -43,7 +43,10 @@ func isParent(self, parent string) bool {
 }
 
 func (p *Property) statusOnly() bool {
-	_, ok := statusProperties[p.Name]
+	if _, ok := statusProperties[p.Name]; ok {
+		return true
+	}
+	_, ok := ignoreProperties[p.Name]
 	return ok
 }
 
@@ -56,7 +59,11 @@ func (p *Property) flag(o string) []string {
 	if p.statusOnly() || p.Source.Location == PropertyDefault || p.Source.Location == PropertyInherited {
 		return nil
 	}
-	return []string{fmt.Sprintf("-%s", o), fmt.Sprintf("%s=%s", p.Name, p.localValue)}
+	value := p.localValue
+	if strings.HasPrefix(p.Name, "feature@") && value == "active" {
+		value = "enabled"
+	}
+	return []string{fmt.Sprintf("-%s", o), fmt.Sprintf("%s=%s", p.Name, value)}
 }
 
 type Dataset struct {
@@ -109,12 +116,27 @@ func (d *Dataset) flags(o string) (flags []string) {
 }
 
 type Pool struct {
-	Name     string
-	Datasets struct {
+	Name       string
+	Properties map[string]*Property
+	Datasets   struct {
 		// Zero index is always the root dataset
 		Ordered []*Dataset
 		Index   map[string]*Dataset
 	}
+}
+
+func (p *Pool) flags() (flags []string) {
+	var sorted sortedProperties
+	for _, p := range p.Properties {
+		sorted = append(sorted, p)
+	}
+	sort.Sort(sorted)
+
+	for _, p := range sorted {
+		flags = append(flags, p.flag("o")...)
+	}
+
+	return flags
 }
 
 func (p *Pool) addDataset(d *Dataset) error {
@@ -146,26 +168,48 @@ func (p *Pool) getAncestors(d *Dataset) (ancestors []*Dataset, err error) {
 	return ancestors, nil
 }
 
-func (d *Dataset) CreateCommand() (cmdline []string) {
-	var o string
-	if isRootDataset(d.Name) {
-		cmdline = []string{"zpool"}
-		o = "O"
-	} else {
-		cmdline = []string{"zfs"}
-		o = "o"
+func (p *Pool) CreatePoolCommand() (cmdline []string, err error) {
+	root, ok := p.Datasets.Index[p.Name]
+	if !ok {
+		return nil, fmt.Errorf("missing root dataset: %s", p.Name)
 	}
 
-	cmdline = append(cmdline, "create")
-	cmdline = append(cmdline, d.flags(o)...)
-	cmdline = append(cmdline, d.Name)
-	return cmdline
+	cmdline = []string{"zpool", "create"}
+	cmdline = append(cmdline, p.flags()...)
+	cmdline = append(cmdline, root.flags("O")...)
+	cmdline = append(cmdline, p.Name)
+	return cmdline, nil
+}
+
+func (p *Pool) CreateDatasetCommand(name string) (cmdline []string, err error) {
+	set, ok := p.Datasets.Index[name]
+	if !ok {
+		return nil, fmt.Errorf("dataset %s not found in pool %s", name, p.Name)
+	}
+
+	cmdline = []string{"zfs", "create"}
+	cmdline = append(cmdline, set.flags("o")...)
+	cmdline = append(cmdline, set.Name)
+	return cmdline, nil
 }
 
 var (
 	header   = regexp.MustCompile(`^NAME\s+PROPERTY\s+VALUE\s+SOURCE$`)
 	property = regexp.MustCompile(`^([^ ]+) +([^ ]+) +((?U).*) +(-|default|local|inherited from )([^ ]+)?$`)
 )
+
+func parseZpoolSource(name string, raw string) (*PropertySource, error) {
+	switch raw {
+	case "-":
+		return &PropertySource{Location: PropertyReadonly}, nil
+	case "default":
+		return &PropertySource{Location: PropertyDefault}, nil
+	case "local":
+		return &PropertySource{Location: PropertyLocal}, nil
+	default:
+		return nil, fmt.Errorf("property source for %s is invalid: %s", name, raw)
+	}
+}
 
 func parseSource(name string, value string, raw string, parent string, pool *Pool) (*PropertySource, error) {
 	if _, ok := statusProperties[name]; ok && raw != "-" {
@@ -203,13 +247,71 @@ func zfsGetAllRaw() ([]byte, error) {
 	return exec.Command(`zfs`, `get`, `all`).Output()
 }
 
-func ImportedPools() ([]*Pool, error) {
-	b, err := zfsGetAllRaw()
+func zpoolGetAllRaw() ([]byte, error) {
+	return exec.Command(`zpool`, `get`, `all`).Output()
+}
+
+func zpoolParse(b []byte) (map[string]map[string]*Property, error) {
+	poolProps := make(map[string]map[string]*Property)
+
+	lines := bytes.Split(b, []byte{'\n'})
+	if !header.Match(lines[0]) {
+		return nil, fmt.Errorf("unexpected header: %s", lines[0])
+	}
+	lines = lines[1:]
+
+	poolName := ""
+	for _, l := range lines {
+		l = bytes.TrimSpace(l)
+		if len(l) == 0 {
+			continue
+		}
+
+		m := property.FindSubmatch(l)
+		if m == nil {
+			return nil, fmt.Errorf("unparseable input: %s", l)
+		}
+
+		nextName := string(m[1])
+		if nextName != poolName {
+			poolName = nextName
+			if _, ok := poolProps[poolName]; ok {
+				return nil, fmt.Errorf("duplicate zpool found; %s", poolName)
+			}
+			poolProps[poolName] = make(map[string]*Property)
+		}
+
+		propName := string(m[2])
+		propSrc, err := parseZpoolSource(propName, string(m[4]))
+		if err != nil {
+			return nil, err
+		}
+		poolProps[poolName][propName] = &Property{
+			Name:       propName,
+			localValue: string(m[3]),
+			Source:     *propSrc,
+		}
+	}
+	return poolProps, nil
+}
+
+func ImportedPools() (map[string]*Pool, error) {
+	b, err := zpoolGetAllRaw()
 	if err != nil {
 		return nil, err
 	}
 
-	pools, err := parseGetAll(b)
+	poolProps, err := zpoolParse(b)
+	if err != nil {
+		return nil, err
+	}
+
+	b, err = zfsGetAllRaw()
+	if err != nil {
+		return nil, err
+	}
+
+	pools, err := parseGetAll(b, poolProps)
 	if _, ok := err.(inputEOF); !ok {
 		return nil, fmt.Errorf("error parsing pool properties: %w", err)
 	}
@@ -217,7 +319,7 @@ func ImportedPools() ([]*Pool, error) {
 	return pools, nil
 }
 
-func fixInheritance(pools []*Pool) error {
+func fixInheritance(pools map[string]*Pool) error {
 	for _, pool := range pools {
 		for _, set := range pool.Datasets.Ordered {
 			if er, ok := set.Properties[encryptionRoot]; ok && er.Value() != "" && er.Value() != set.Name {
@@ -283,22 +385,30 @@ func fixInheritance(pools []*Pool) error {
 	return nil
 }
 
-func parseGetAll(b []byte) ([]*Pool, error) {
+func parseGetAll(b []byte, poolProps map[string]map[string]*Property) (map[string]*Pool, error) {
 	lines := bytes.Split(b, []byte{'\n'})
 	if !header.Match(lines[0]) {
 		return nil, fmt.Errorf("unexpected header: %s", lines[0])
 	}
 	lines = lines[1:]
 
-	var pools []*Pool
+	pools := make(map[string]*Pool)
 	p := parser{lines: lines}
 	for {
 		pool, err := p.parsePool()
+		if pool != nil {
+			props, ok := poolProps[pool.Name]
+			if !ok {
+				return nil, fmt.Errorf("missing pool properties: %s", pool.Name)
+			}
+			pool.Properties = props
+		}
+
 		switch err.(type) {
 		case nextPool:
-			pools = append(pools, pool)
+			pools[pool.Name] = pool
 		case inputEOF:
-			pools = append(pools, pool)
+			pools[pool.Name] = pool
 			if err := fixInheritance(pools); err != nil {
 				return nil, err
 			}

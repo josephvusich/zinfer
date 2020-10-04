@@ -23,6 +23,23 @@ var statusProperties = map[string]struct{}{
 	"logicalreferenced":    {},
 	"encryptionroot":       {},
 	"keystatus":            {},
+
+	"size":          {},
+	"capacity":      {},
+	"health":        {},
+	"dedupratio":    {},
+	"free":          {},
+	"allocated":     {},
+	"expandsize":    {},
+	"freeing":       {},
+	"fragmentation": {},
+	"leaked":        {},
+	"checkpoint":    {},
+}
+
+// Properties that do not appear readonly, but should not be included in output
+var ignoreProperties = map[string]struct{}{
+	"readonly": {}, // Can only be set during import
 }
 
 var encryptionRoot = "encryptionroot"

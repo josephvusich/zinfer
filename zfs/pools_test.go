@@ -1,6 +1,7 @@
 package zfs
 
 import (
+	"sort"
 	"strings"
 	"testing"
 
@@ -219,7 +220,12 @@ bar/foo/bar  xxup            xxip        -`)
 		},
 	}
 
-	pools, err := parseGetAll(input)
+	dummyPools := map[string]map[string]*Property{
+		"foo":  make(map[string]*Property),
+		"fizz": make(map[string]*Property),
+		"bar":  make(map[string]*Property),
+	}
+	pools, err := parseGetAll(input, dummyPools)
 	assert.EqualError(err, "end of input")
 
 	assert.Len(pools, len(expected))
@@ -251,15 +257,24 @@ bar/foo/bar  xxup            xxip        -`)
 		`zfs create -o encryption=foobar -o keyformat=passphrase -o keylocation=prompt -o pbkdf2iters=342K bar/foo`,
 		`zfs create -o encryption=fizzybar bar/foo/bar`,
 	}
+	sort.Strings(expectCmd)
 
-	var n int
+	var actual []string
 	for _, pool := range pools {
-		for _, dataset := range pool.Datasets.Ordered {
-			cmdline := dataset.CreateCommand()
-			assert.Equal(expectCmd[n], strings.Join(cmdline, " "))
-			n++
+		cmdline, err := pool.CreatePoolCommand()
+		assert.NoError(err)
+		actual = append(actual, strings.Join(cmdline, " "))
+		for i, dataset := range pool.Datasets.Ordered {
+			if i == 0 {
+				continue
+			}
+			cmdline, err = pool.CreateDatasetCommand(dataset.Name)
+			assert.NoError(err)
+			actual = append(actual, strings.Join(cmdline, " "))
 		}
 	}
+	sort.Strings(actual)
+	assert.Equal(expectCmd, actual)
 }
 
 func TestIsParent(t *testing.T) {
@@ -306,8 +321,13 @@ foo      encryptionroot  foo/bar  -
 foo/bar  encryptionroot  bar      -`,
 	}
 
+	dummyPools := map[string]map[string]*Property{
+		"xyz": make(map[string]*Property),
+		"foo": make(map[string]*Property),
+		"bar": make(map[string]*Property),
+	}
 	for out, in := range cases {
-		_, err := parseGetAll([]byte(in))
+		_, err := parseGetAll([]byte(in), dummyPools)
 		assert.EqualError(err, out)
 	}
 }
