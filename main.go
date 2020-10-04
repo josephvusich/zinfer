@@ -29,7 +29,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Println(joinCommand(cmd))
+		fmt.Println(escapeCommand(cmd))
 
 		for i, d := range p.Datasets.Ordered {
 			if i == 0 {
@@ -41,11 +41,14 @@ func main() {
 				log.Fatal(err)
 			}
 
-			fmt.Println(joinCommand(cmd))
+			fmt.Println(escapeCommand(cmd))
 		}
 	}
 }
 
-func joinCommand(cmd []string) string {
+func escapeCommand(cmd []string) string {
+	for i := range cmd {
+		cmd[i] = shellescape.Quote(cmd[i])
+	}
 	return strings.Join(cmd, " ")
 }
