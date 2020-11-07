@@ -276,7 +276,7 @@ func zpoolParse(b []byte) (map[string]map[string]*Property, error) {
 		if nextName != poolName {
 			poolName = nextName
 			if _, ok := poolProps[poolName]; ok {
-				return nil, fmt.Errorf("duplicate zpool found; %s", poolName)
+				return nil, fmt.Errorf("duplicate zpool found: %s", poolName)
 			}
 			poolProps[poolName] = make(map[string]*Property)
 		}
