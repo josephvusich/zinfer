@@ -16,6 +16,11 @@ type expectSet struct {
 func TestParseGetAll(t *testing.T) {
 	assert := require.New(t)
 
+	poolInput := []byte(`NAME  PROPERTY  VALUE  SOURCE
+foo  feature@d  disabled  local
+foo  feature@e  enabled   local
+foo  feature@a  active    local`)
+
 	input := []byte(`NAME  PROPERTY  VALUE  SOURCE
 foo          fizz            buzz        default
 foo          mounted         no          -
@@ -220,11 +225,11 @@ bar/foo/bar  xxup            xxip        -`)
 		},
 	}
 
-	dummyPools := map[string]map[string]*Property{
-		"foo":  make(map[string]*Property),
-		"fizz": make(map[string]*Property),
-		"bar":  make(map[string]*Property),
-	}
+	dummyPools, err := zpoolParse(poolInput)
+	assert.NoError(err)
+	dummyPools["fizz"] = make(map[string]*Property)
+	dummyPools["bar"] = make(map[string]*Property)
+
 	pools, err := parseGetAll(input, dummyPools)
 	assert.EqualError(err, "end of input")
 
@@ -251,9 +256,9 @@ bar/foo/bar  xxup            xxip        -`)
 	}
 
 	expectCmd := []string{
-		`zpool create foo`,
+		`zpool create -d -o feature@a=enabled -o feature@e=enabled foo`,
 		`zfs create -o buzz=fizz foo/bar`,
-		`zpool create -O xxup=xxip -O zzup=zzip bar`,
+		`zpool create -d -O xxup=xxip -O zzup=zzip bar`,
 		`zfs create -o encryption=foobar -o keyformat=passphrase -o keylocation=prompt -o pbkdf2iters=342K bar/foo`,
 		`zfs create -o encryption=fizzybar bar/foo/bar`,
 	}

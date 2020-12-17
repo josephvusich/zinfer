@@ -19,6 +19,12 @@ const (
 	PropertyReadonly
 )
 
+const (
+	FeatureDisabled = "disabled"
+	FeatureEnabled  = "enabled"
+	FeatureActive   = "active"
+)
+
 type PropertySource struct {
 	Location  PropertyLocation
 	Parent    string
@@ -55,13 +61,22 @@ func (p *Property) nonEncryptionInherit() bool {
 	return !ok && !p.statusOnly()
 }
 
+func (p *Property) isFeature() bool {
+	return strings.HasPrefix(p.Name, "feature@")
+}
+
 func (p *Property) flag(o string) []string {
 	if p.statusOnly() || p.Source.Location == PropertyDefault || p.Source.Location == PropertyInherited {
 		return nil
 	}
 	value := p.localValue
-	if strings.HasPrefix(p.Name, "feature@") && value == "active" {
-		value = "enabled"
+	if p.isFeature() {
+		if value == FeatureDisabled {
+			return nil
+		}
+		if value == FeatureActive {
+			value = FeatureEnabled
+		}
 	}
 	return []string{fmt.Sprintf("-%s", o), fmt.Sprintf("%s=%s", p.Name, value)}
 }
@@ -174,7 +189,7 @@ func (p *Pool) CreatePoolCommand() (cmdline []string, err error) {
 		return nil, fmt.Errorf("missing root dataset: %s", p.Name)
 	}
 
-	cmdline = []string{"zpool", "create"}
+	cmdline = []string{"zpool", "create", "-d"}
 	cmdline = append(cmdline, p.flags()...)
 	cmdline = append(cmdline, root.flags("O")...)
 	cmdline = append(cmdline, p.Name)
