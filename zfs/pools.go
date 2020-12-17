@@ -65,13 +65,13 @@ func (p *Property) isFeature() bool {
 	return strings.HasPrefix(p.Name, "feature@")
 }
 
-func (p *Property) flag(o string) []string {
+func (p *Property) flag(o string, opts *FlagOptions) []string {
 	if p.statusOnly() || p.Source.Location == PropertyDefault || p.Source.Location == PropertyInherited {
 		return nil
 	}
 	value := p.localValue
 	if p.isFeature() {
-		if value == FeatureDisabled {
+		if value == FeatureDisabled || (opts.MinimalFeatures && value == FeatureEnabled) {
 			return nil
 		}
 		if value == FeatureActive {
@@ -124,7 +124,7 @@ func (d *Dataset) flags(o string) (flags []string) {
 				}
 			}
 		}
-		flags = append(flags, p.flag(o)...)
+		flags = append(flags, p.flag(o, defaultFlagOpts)...)
 	}
 
 	return flags
@@ -140,7 +140,7 @@ type Pool struct {
 	}
 }
 
-func (p *Pool) flags() (flags []string) {
+func (p *Pool) flags(opts *FlagOptions) (flags []string) {
 	var sorted sortedProperties
 	for _, p := range p.Properties {
 		sorted = append(sorted, p)
@@ -148,7 +148,7 @@ func (p *Pool) flags() (flags []string) {
 	sort.Sort(sorted)
 
 	for _, p := range sorted {
-		flags = append(flags, p.flag("o")...)
+		flags = append(flags, p.flag("o", opts)...)
 	}
 
 	return flags
@@ -183,14 +183,25 @@ func (p *Pool) getAncestors(d *Dataset) (ancestors []*Dataset, err error) {
 	return ancestors, nil
 }
 
-func (p *Pool) CreatePoolCommand() (cmdline []string, err error) {
+type FlagOptions struct {
+	// Omit pool features that are "enabled" but not "active"
+	MinimalFeatures bool
+}
+
+var defaultFlagOpts = &FlagOptions{}
+
+func (p *Pool) CreatePoolCommand(opts *FlagOptions) (cmdline []string, err error) {
+	if opts == nil {
+		opts = defaultFlagOpts
+	}
+
 	root, ok := p.Datasets.Index[p.Name]
 	if !ok {
 		return nil, fmt.Errorf("missing root dataset: %s", p.Name)
 	}
 
 	cmdline = []string{"zpool", "create", "-d"}
-	cmdline = append(cmdline, p.flags()...)
+	cmdline = append(cmdline, p.flags(opts)...)
 	cmdline = append(cmdline, root.flags("O")...)
 	cmdline = append(cmdline, p.Name)
 	return cmdline, nil

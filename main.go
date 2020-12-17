@@ -1,16 +1,31 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
+	"os"
 	"sort"
 	"strings"
 
+	"github.com/josephvusich/go-getopt"
 	"github.com/josephvusich/zinfer/zfs"
 	"gopkg.in/alessio/shellescape.v1"
 )
 
 func main() {
+	minimalFeatures := flag.Bool("minimal-features", false, "omit enabled pool features that are not currently active")
+	help := flag.Bool("help", false, "show this help message")
+	if err := getopt.CommandLine.Parse(os.Args[1:]); err != nil {
+		log.Fatal(err)
+	}
+
+	if *help {
+		fmt.Println("usage: zinfer [--minimal-features]")
+		getopt.PrintDefaults()
+		os.Exit(0)
+	}
+
 	pools, err := zfs.ImportedPools()
 	if err != nil {
 		log.Fatal(err)
@@ -24,7 +39,7 @@ func main() {
 
 	for _, poolName := range sortedPools {
 		p := pools[poolName]
-		cmd, err := p.CreatePoolCommand()
+		cmd, err := p.CreatePoolCommand(&zfs.FlagOptions{MinimalFeatures: *minimalFeatures})
 		if err != nil {
 			log.Fatal(err)
 		}
