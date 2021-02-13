@@ -21,7 +21,7 @@ func main() {
 	}
 
 	if *help {
-		fmt.Println("usage: zinfer [--minimal-features]")
+		fmt.Fprintln(flag.CommandLine.Output(), "usage: zinfer [--minimal-features]")
 		getopt.PrintDefaults()
 		os.Exit(0)
 	}
