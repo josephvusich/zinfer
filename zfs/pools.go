@@ -17,6 +17,7 @@ const (
 	PropertyLocal
 	PropertyInherited
 	PropertyReadonly
+	PropertyTemporary
 )
 
 const (
@@ -49,6 +50,9 @@ func isParent(self, parent string) bool {
 }
 
 func (p *Property) statusOnly() bool {
+	if p.Source.Location == PropertyTemporary {
+		return true
+	}
 	if _, ok := statusProperties[p.Name]; ok {
 		return true
 	}
@@ -221,7 +225,7 @@ func (p *Pool) CreateDatasetCommand(name string) (cmdline []string, err error) {
 
 var (
 	header   = regexp.MustCompile(`^NAME\s+PROPERTY\s+VALUE\s+SOURCE$`)
-	property = regexp.MustCompile(`^([^ ]+) +([^ ]+) +((?U).*) +(-|default|local|inherited from )([^ ]+)?$`)
+	property = regexp.MustCompile(`^([^ ]+) +([^ ]+) +((?U).*) +(-|default|local|temporary|inherited from )([^ ]+)?$`)
 )
 
 func parseZpoolSource(name string, raw string) (*PropertySource, error) {
@@ -249,6 +253,8 @@ func parseSource(name string, value string, raw string, parent string, pool *Poo
 		return &PropertySource{Location: PropertyDefault}, nil
 	case "local":
 		return &PropertySource{Location: PropertyLocal}, nil
+	case "temporary":
+		return &PropertySource{Location: PropertyTemporary}, nil
 	case "inherited from ":
 		if parent, ok := pool.Datasets.Index[parent]; ok {
 			if prop, ok := parent.Properties[name]; ok {

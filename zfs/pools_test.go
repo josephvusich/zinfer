@@ -46,6 +46,7 @@ bar/foo/bar  keylocation     none        default
 bar/foo/bar  keyformat       passphrase  -
 bar/foo/bar  pbkdf2iters     342K        -
 bar/foo/bar  keystatus       available   -
+bar/foo/bar  readonly        on          temporary
 bar/foo/bar  zzup            zzip        inherited from bar
 bar/foo/bar  xxup            xxip        -`)
 
@@ -174,6 +175,13 @@ bar/foo/bar  xxup            xxip        -`)
 						Source: PropertySource{
 							Location: PropertyInherited,
 							Parent:   "bar",
+						},
+					},
+					{
+						Name:       "readonly",
+						localValue: "on",
+						Source: PropertySource{
+							Location: PropertyTemporary,
 						},
 					},
 					{
