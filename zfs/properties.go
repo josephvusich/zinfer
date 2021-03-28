@@ -11,6 +11,7 @@ var statusProperties = map[string]struct{}{
 	"compressratio":        {},
 	"mounted":              {},
 	"origin":               {},
+	"receive_resume_token": {},
 	"version":              {},
 	"defer_destroy":        {},
 	"userrefs":             {},

@@ -37,7 +37,7 @@ bar/foo      mounted         yes         -
 bar/foo      encryptionroot  bar/foo     -
 bar/foo      encryption      foobar      -
 bar/foo      keystatus       available   -
-bar/foo      keylocation     prompt      local
+bar/foo      keylocation     prompt      received
 bar/foo      keyformat       passphrase  -
 bar/foo      pbkdf2iters     342K        -
 bar/foo/bar  encryptionroot  bar/foo     -
@@ -139,7 +139,7 @@ bar/foo/bar  xxup            xxip        -`)
 						Name:       "keylocation",
 						localValue: "prompt",
 						Source: PropertySource{
-							Location: PropertyLocal,
+							Location: PropertyReceived,
 						},
 					},
 					{

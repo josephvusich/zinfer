@@ -17,6 +17,7 @@ const (
 	PropertyLocal
 	PropertyInherited
 	PropertyReadonly
+	PropertyReceived
 	PropertyTemporary
 )
 
@@ -225,7 +226,7 @@ func (p *Pool) CreateDatasetCommand(name string) (cmdline []string, err error) {
 
 var (
 	header   = regexp.MustCompile(`^NAME\s+PROPERTY\s+VALUE\s+SOURCE$`)
-	property = regexp.MustCompile(`^([^ ]+) +([^ ]+) +((?U).*) +(-|default|local|temporary|inherited from )([^ ]+)?$`)
+	property = regexp.MustCompile(`^([^ ]+) +([^ ]+) +((?U).*) +(-|default|local|temporary|received|inherited from )([^ ]+)?$`)
 )
 
 func parseZpoolSource(name string, raw string) (*PropertySource, error) {
@@ -253,6 +254,8 @@ func parseSource(name string, value string, raw string, parent string, pool *Poo
 		return &PropertySource{Location: PropertyDefault}, nil
 	case "local":
 		return &PropertySource{Location: PropertyLocal}, nil
+	case "received":
+		return &PropertySource{Location: PropertyReceived}, nil
 	case "temporary":
 		return &PropertySource{Location: PropertyTemporary}, nil
 	case "inherited from ":
