@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -37,7 +38,10 @@ func main() {
 	}
 	sort.Strings(sortedPools)
 
-	for _, poolName := range sortedPools {
+	for i, poolName := range sortedPools {
+		if i != 0 {
+			fmt.Print("\n")
+		}
 		p := pools[poolName]
 		cmd, err := p.CreatePoolCommand(&zfs.FlagOptions{MinimalFeatures: *minimalFeatures})
 		if err != nil {
@@ -61,9 +65,14 @@ func main() {
 	}
 }
 
+var oPattern = regexp.MustCompile(`^-[oO]$`)
+
 func escapeCommand(cmd []string) string {
 	for i := range cmd {
 		cmd[i] = shellescape.Quote(cmd[i])
+		if oPattern.MatchString(cmd[i]) || len(cmd)-1 == i {
+			cmd[i] = "\\\n  " + cmd[i]
+		}
 	}
 	return strings.Join(cmd, " ")
 }
