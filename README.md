@@ -8,7 +8,7 @@ Over time, a pool or dataset's properties may change from those originally passe
 
 ## Usage
 ```
-zinfer [--minimal-features]
+zinfer [--minimal-features] [filesystem]...
       --help              show this help message
       --minimal-features  omit enabled pool features that are not currently active
 ```

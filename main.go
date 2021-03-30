@@ -27,6 +27,11 @@ func main() {
 		os.Exit(0)
 	}
 
+	requested := map[string]struct{}{}
+	for _, name := range flag.Args() {
+		requested[name] = struct{}{}
+	}
+
 	pools, err := zfs.ImportedPools()
 	if err != nil {
 		log.Fatal(err)
@@ -38,29 +43,50 @@ func main() {
 	}
 	sort.Strings(sortedPools)
 
-	for i, poolName := range sortedPools {
-		if i != 0 {
+	printed := 0
+	print := func(p *zfs.Pool, name string, isPool bool) {
+		if _, ok := requested[name]; !ok && flag.NArg() != 0 {
+			return
+		} else if ok {
+			delete(requested, name)
+		}
+		if printed != 0 {
 			fmt.Print("\n")
 		}
-		p := pools[poolName]
-		cmd, err := p.CreatePoolCommand(&zfs.FlagOptions{MinimalFeatures: *minimalFeatures})
+		printed++
+		var cmd []string
+		var err error
+		if isPool {
+			cmd, err = p.CreatePoolCommand(&zfs.FlagOptions{MinimalFeatures: *minimalFeatures})
+		} else {
+			cmd, err = p.CreateDatasetCommand(name)
+		}
 		if err != nil {
 			log.Fatal(err)
 		}
-
 		fmt.Println(escapeCommand(cmd))
+	}
+
+	for _, poolName := range sortedPools {
+		p := pools[poolName]
+
+		print(p, poolName, true)
 
 		for i, d := range p.Datasets.Ordered {
 			if i == 0 {
 				continue
 			}
 
-			cmd, err = p.CreateDatasetCommand(d.Name)
-			if err != nil {
-				log.Fatal(err)
-			}
+			print(p, d.Name, false)
+		}
+	}
 
-			fmt.Println(escapeCommand(cmd))
+	if len(requested) != 0 {
+		if printed != 0 {
+			fmt.Print("\n")
+		}
+		for missing := range requested {
+			fmt.Fprintf(os.Stderr, "filesystem not found: %s\n", missing)
 		}
 	}
 }
