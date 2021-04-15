@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/josephvusich/go-getopt"
-	"github.com/josephvusich/zinfer/zfs"
+	"github.com/josephvusich/go-zfs"
 	"gopkg.in/alessio/shellescape.v1"
 )
 
