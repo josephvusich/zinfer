@@ -8,7 +8,8 @@ Over time, a pool or dataset's properties may change from those originally passe
 
 ## Usage
 ```
-zinfer [--minimal-features] [filesystem]...
+usage: zinfer [--minimal-features] [--recursive] [dataset ...]
       --help              show this help message
       --minimal-features  omit enabled pool features that are not currently active
+  -R, --recursive         recursively include descendant datasets of the specified parents
 ```

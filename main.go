@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -18,20 +19,28 @@ func main() {
 	log.SetFlags(0)
 
 	minimalFeatures := flag.Bool("minimal-features", false, "omit enabled pool features that are not currently active")
+	recursive := flag.Bool("recursive", false, "recursively include descendant datasets of the specified parents")
 	help := flag.Bool("help", false, "show this help message")
+	getopt.Alias("R", "recursive")
 	if err := getopt.CommandLine.Parse(os.Args[1:]); err != nil {
 		log.Fatal(err)
 	}
 
 	if *help {
-		fmt.Fprintln(flag.CommandLine.Output(), "usage: zinfer [--minimal-features]")
+		fmt.Fprintln(flag.CommandLine.Output(), "usage: zinfer [--minimal-features] [--recursive] [dataset ...]")
 		getopt.PrintDefaults()
 		os.Exit(0)
 	}
 
 	requested := map[string]struct{}{}
+	requestedPrefix := map[string]struct{}{}
 	for _, name := range flag.Args() {
 		requested[name] = struct{}{}
+		requestedPrefix[name] = struct{}{}
+	}
+
+	if *recursive && len(requestedPrefix) == 0 {
+		log.Fatal("--recursive flag requires at least one parent dataset to be specified")
 	}
 
 	pools, err := zfs.ImportedPools()
@@ -47,10 +56,17 @@ func main() {
 
 	printed := 0
 	print := func(p *zfs.Pool, name string, isPool bool) {
-		if _, ok := requested[name]; !ok && flag.NArg() != 0 {
-			return
-		} else if ok {
-			delete(requested, name)
+		if len(requestedPrefix) != 0 {
+			if _, ok := requested[name]; ok {
+				delete(requested, name)
+			} else if *recursive {
+				if _, ok := requestedPrefix[path.Dir(name)]; !ok {
+					return
+				}
+				requestedPrefix[name] = struct{}{}
+			} else {
+				return
+			}
 		}
 		if printed != 0 {
 			fmt.Print("\n")
