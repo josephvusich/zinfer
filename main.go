@@ -15,6 +15,8 @@ import (
 )
 
 func main() {
+	log.SetFlags(0)
+
 	minimalFeatures := flag.Bool("minimal-features", false, "omit enabled pool features that are not currently active")
 	help := flag.Bool("help", false, "show this help message")
 	if err := getopt.CommandLine.Parse(os.Args[1:]); err != nil {
