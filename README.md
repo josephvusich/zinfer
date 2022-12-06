@@ -4,7 +4,7 @@ Over time, a pool or dataset's properties may change from those originally passe
 
 ## Installation
 
-* `go get -u github.com/josephvusich/zinfer`
+* `go install github.com/josephvusich/zinfer@latest`
 
 ## Usage
 ```
